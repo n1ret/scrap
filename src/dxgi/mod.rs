@@ -1,36 +1,36 @@
 use self::ffi::*;
 use std::{io, mem, ptr, slice};
-use winapi::{
-    HRESULT,
-    IDXGIAdapter1,
-    IDXGIFactory1,
-    IDXGIOutput1,
-    S_OK,
-    UINT,
-    DXGI_OUTPUT_DESC,
-    LONG,
-    DXGI_MODE_ROTATION,
-    ID3D11Device,
-    ID3D11DeviceContext,
-    IDXGIOutputDuplication,
-    D3D11_SDK_VERSION,
-    D3D_DRIVER_TYPE_UNKNOWN,
-    D3D_FEATURE_LEVEL_9_1,
-    DXGI_ERROR_ACCESS_LOST,
-    DXGI_ERROR_WAIT_TIMEOUT,
-    DXGI_ERROR_INVALID_CALL,
-    E_ACCESSDENIED,
-    DXGI_ERROR_UNSUPPORTED,
-    ID3D11Texture2D,
-    DXGI_ERROR_NOT_CURRENTLY_AVAILABLE,
-    DXGI_ERROR_SESSION_DISCONNECTED,
-    TRUE,
-    IDXGISurface,
-    IDXGIResource,
-    DXGI_RESOURCE_PRIORITY_MAXIMUM,
-    D3D11_CPU_ACCESS_READ,
-    D3D11_USAGE_STAGING
-};
+use winapi::um::d3d11::D3D11_USAGE_STAGING;
+use winapi::um::d3d11::D3D11_CPU_ACCESS_READ;
+use winapi::shared::dxgi::DXGI_RESOURCE_PRIORITY_MAXIMUM;
+use winapi::shared::dxgi::IDXGIResource;
+use winapi::shared::dxgi::IDXGISurface;
+use winapi::shared::minwindef::TRUE;
+use winapi::shared::winerror::DXGI_ERROR_SESSION_DISCONNECTED;
+use winapi::shared::winerror::DXGI_ERROR_NOT_CURRENTLY_AVAILABLE;
+use winapi::um::d3d11::ID3D11Texture2D;
+use winapi::shared::winerror::DXGI_ERROR_UNSUPPORTED;
+use winapi::shared::winerror::E_ACCESSDENIED;
+use winapi::shared::winerror::DXGI_ERROR_INVALID_CALL;
+use winapi::shared::winerror::DXGI_ERROR_WAIT_TIMEOUT;
+use winapi::shared::winerror::DXGI_ERROR_ACCESS_LOST;
+use winapi::um::d3dcommon::D3D_FEATURE_LEVEL_9_1;
+use winapi::um::d3d11::D3D11_SDK_VERSION;
+use winapi::um::d3dcommon::D3D_DRIVER_TYPE_UNKNOWN;
+use winapi::shared::dxgi1_2::IDXGIOutputDuplication;
+use winapi::shared::dxgitype::DXGI_MODE_ROTATION;
+use winapi::shared::ntdef::LONG;
+use winapi::shared::dxgi::DXGI_OUTPUT_DESC;
+use winapi::shared::minwindef::UINT;
+use winapi::shared::winerror::S_OK;
+use winapi::shared::dxgi1_2::IDXGIOutput1;
+use winapi::shared::dxgi::IDXGIFactory1;
+use winapi::shared::dxgi::IDXGIAdapter1;
+use winapi::shared::winerror::HRESULT;
+use winapi::um::d3d11::ID3D11Device;
+use winapi::um::d3d11::ID3D11DeviceContext;
+use winapi::um::unknwnbase::IUnknown;
+use winapi::um::d3d11::ID3D11Resource;
 
 mod ffi;
 
@@ -50,11 +50,11 @@ impl Capturer {
         let mut device = ptr::null_mut();
         let mut context = ptr::null_mut();
         let mut duplication = ptr::null_mut();
-        let mut desc = unsafe { mem::uninitialized() };
+        let mut desc = mem::MaybeUninit::uninit();
 
         if unsafe {
             D3D11CreateDevice(
-                &mut **display.adapter,
+                display.adapter,
                 D3D_DRIVER_TYPE_UNKNOWN,
                 ptr::null_mut(), // No software rasterizer.
                 0, // No device flags.
@@ -62,6 +62,7 @@ impl Capturer {
                 0, // Feature levels' length.
                 D3D11_SDK_VERSION,
                 &mut device,
+                #[allow(const_item_mutation)]
                 &mut D3D_FEATURE_LEVEL_9_1,
                 &mut context
             )
@@ -69,10 +70,9 @@ impl Capturer {
             // Unknown error.
             return Err(io::ErrorKind::Other.into());
         }
-
+       
         let res = wrap_hresult(unsafe {
-            (*display.inner).DuplicateOutput(
-                &mut **device,
+            (*display.inner).DuplicateOutput(device  as *mut IUnknown,
                 &mut duplication
             )
         });
@@ -84,15 +84,15 @@ impl Capturer {
             }
             return Err(err);
         }
-
+        
         unsafe {
-            (*duplication).GetDesc(&mut desc);
+            (*duplication).GetDesc(desc.assume_init_mut());
         }
 
         Ok(unsafe {
             let mut capturer = Capturer {
                 device, context, duplication,
-                fastlane: desc.DesktopImageInSystemMemory == TRUE,
+                fastlane: desc.assume_init_mut().DesktopImageInSystemMemory == TRUE,
                 surface: ptr::null_mut(),
                 height: display.height() as usize,
                 data: ptr::null_mut(),
@@ -105,19 +105,19 @@ impl Capturer {
 
     unsafe fn load_frame(&mut self, timeout: UINT) -> io::Result<()> {
         let mut frame = ptr::null_mut();
-        let mut info = mem::uninitialized();
+        let mut info = mem::MaybeUninit::uninit();
         self.data = ptr::null_mut();
 
         wrap_hresult((*self.duplication).AcquireNextFrame(
             timeout,
-            &mut info,
+            info.assume_init_mut(),
             &mut frame
         ))?;
 
         if self.fastlane {
-            let mut rect = mem::uninitialized();
+            let mut rect = mem::MaybeUninit::uninit();
             let res = wrap_hresult(
-                (*self.duplication).MapDesktopSurface(&mut rect)
+                (*self.duplication).MapDesktopSurface( rect.assume_init_mut())
             );
 
             (*frame).Release();
@@ -125,22 +125,22 @@ impl Capturer {
             if let Err(err) = res {
                 Err(err)
             } else {
-                self.data = rect.pBits;
-                self.len = self.height * rect.Pitch as usize;
+                self.data = rect.assume_init_ref().pBits;
+                self.len = self.height * rect.assume_init_ref().Pitch as usize;
                 Ok(())
             }
         } else {
             self.surface = ptr::null_mut();
             self.surface = self.ohgodwhat(frame)?;
 
-            let mut rect = mem::uninitialized();
+            let mut rect = mem::MaybeUninit::uninit();
             wrap_hresult((*self.surface).Map(
-                &mut rect,
+                rect.assume_init_mut(),
                 DXGI_MAP_READ
             ))?;
 
-            self.data = rect.pBits;
-            self.len = self.height * rect.Pitch as usize;
+            self.data = rect.assume_init_ref().pBits;
+            self.len = self.height * rect.assume_init_ref().Pitch as usize;
             Ok(())
         }
     }
@@ -155,17 +155,17 @@ impl Capturer {
             &mut texture as *mut *mut _ as *mut *mut _
         );
 
-        let mut texture_desc = mem::uninitialized();
-        (*texture).GetDesc(&mut texture_desc);
+        let mut texture_desc = mem::MaybeUninit::uninit();
+        (*texture).GetDesc(texture_desc.assume_init_mut());
 
-        texture_desc.Usage = D3D11_USAGE_STAGING;
-        texture_desc.BindFlags = 0;
-        texture_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ.0;
-        texture_desc.MiscFlags = 0;
+        texture_desc.assume_init_mut().Usage = D3D11_USAGE_STAGING;
+        texture_desc.assume_init_mut().BindFlags = 0;
+        texture_desc.assume_init_mut().CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        texture_desc.assume_init_mut().MiscFlags = 0;
 
         let mut readable = ptr::null_mut();
         let res = wrap_hresult((*self.device).CreateTexture2D(
-            &mut texture_desc,
+            texture_desc.assume_init_mut(),
             ptr::null(),
             &mut readable
         ));
@@ -185,8 +185,8 @@ impl Capturer {
             );
 
             (*self.context).CopyResource(
-                &mut **readable,
-                &mut **texture
+                readable as *mut ID3D11Resource,
+                texture as *mut ID3D11Resource,
             );
 
             (*frame).Release();
@@ -302,8 +302,8 @@ impl Displays {
         // We get the display's details.
 
         let desc = unsafe {
-            let mut desc = mem::uninitialized();
-            (*output).GetDesc(&mut desc);
+            let mut desc = mem::MaybeUninit::uninit();
+            (*output).GetDesc(desc.assume_init_mut());
             desc
         };
 
@@ -313,7 +313,7 @@ impl Displays {
         unsafe {
             (*output).QueryInterface(
                 &IID_IDXGIOUTPUT1,
-                &mut inner as *mut *mut _ as *mut *mut _
+                &mut inner 
             );
             (*output).Release();
         }
@@ -332,8 +332,8 @@ impl Displays {
         unsafe {
             (*self.adapter).AddRef();
         }
-
-        Some(Some(Display { inner, adapter: self.adapter, desc }))
+        
+        Some(Some(Display { inner:inner as *mut IDXGIOutput1, adapter: self.adapter, desc:unsafe{desc.assume_init()} }))
     }
 }
 

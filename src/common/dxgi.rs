@@ -25,12 +25,10 @@ impl Capturer {
     }
 
     pub fn frame<'a>(&'a mut self) -> io::Result<Frame<'a>> {
-        const MILLISECONDS_PER_FRAME: u32 = 0;
+        const MILLISECONDS_PER_FRAME: u32 = 200;
         match self.inner.frame(MILLISECONDS_PER_FRAME) {
             Ok(frame) => Ok(Frame(frame)),
-            Err(ref error) if error.kind() == TimedOut => {
-                Err(WouldBlock.into())
-            },
+            Err(ref error) if error.kind() == TimedOut => Err(WouldBlock.into()),
             Err(error) => Err(error)
         }
     }

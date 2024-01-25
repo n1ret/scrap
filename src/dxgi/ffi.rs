@@ -1,16 +1,14 @@
-use winapi::{
-    GUID,
-    HRESULT,
-    REFIID,
-    IDXGIFactory1,
-    IDXGIAdapter,
-    D3D_DRIVER_TYPE,
-    HMODULE,
-    UINT,
-    ID3D11Device,
-    D3D_FEATURE_LEVEL,
-    ID3D11DeviceContext
-};
+use winapi::shared::guiddef::GUID;
+use winapi::shared::winerror::HRESULT;
+use winapi::shared::guiddef::REFIID;
+use winapi::shared::dxgi::IDXGIFactory1;
+use winapi::shared::dxgi::IDXGIAdapter1;
+use winapi::um::d3dcommon::D3D_DRIVER_TYPE;
+use winapi::shared::minwindef::HMODULE;
+use winapi::shared::minwindef::UINT;
+use winapi::um::d3d11::ID3D11Device;
+use winapi::um::d3dcommon::D3D_FEATURE_LEVEL;
+use winapi::um::d3d11::ID3D11DeviceContext;
 
 pub const DXGI_MAP_READ: UINT = 1;
 
@@ -51,7 +49,7 @@ extern "system" {
     ) -> HRESULT;
 
     pub fn D3D11CreateDevice(
-        pAdapter: *mut IDXGIAdapter,
+        pAdapter: *mut IDXGIAdapter1,
         DriverType: D3D_DRIVER_TYPE,
         Software: HMODULE,
         Flags: UINT,
